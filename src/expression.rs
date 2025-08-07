@@ -82,14 +82,14 @@ mod tests {
 
     #[test]
     fn test_unary_expression() {
-        let token = Token::new(TokenKind::Minus, "-".to_string(), None);
+        let token = Token::new(TokenKind::Minus, "-".to_string(), None, 1);
         let expr = Expr::unary(token, Expr::literal(LiteralKind::Int));
         assert_eq!(expr.to_string(), "(- int)");
     }
 
     #[test]
     fn test_binary_expression() {
-        let token = Token::new(TokenKind::Plus, "+".to_string(), None);
+        let token = Token::new(TokenKind::Plus, "+".to_string(), None, 1);
         let left = Expr::literal(LiteralKind::Int);
         let right = Expr::literal(LiteralKind::Decimal);
         let expr = Expr::binary(left, token, right);

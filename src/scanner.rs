@@ -15,27 +15,6 @@ struct Scanner<'a> {
 }
 
 impl<'a> Scanner<'a> {
-    fn keywords() -> HashMap<&'static str, TokenKind> {
-        let mut keywords = HashMap::new();
-        keywords.insert("and", TokenKind::And);
-        keywords.insert("class", TokenKind::Class);
-        keywords.insert("else", TokenKind::Else);
-        keywords.insert("false", TokenKind::False);
-        keywords.insert("for", TokenKind::For);
-        keywords.insert("fun", TokenKind::Fun);
-        keywords.insert("if", TokenKind::If);
-        keywords.insert("nil", TokenKind::Nil);
-        keywords.insert("or", TokenKind::Or);
-        keywords.insert("print", TokenKind::Print);
-        keywords.insert("return", TokenKind::Return);
-        keywords.insert("super", TokenKind::Super);
-        keywords.insert("this", TokenKind::This);
-        keywords.insert("true", TokenKind::True);
-        keywords.insert("var", TokenKind::Var);
-        keywords.insert("while", TokenKind::While);
-        keywords
-    }
-
     fn new(source: &'a str) -> Self {
         Self {
             source,
@@ -53,7 +32,7 @@ impl<'a> Scanner<'a> {
         }
 
         self.tokens
-            .push(Token::new(TokenKind::Eof, "".to_string(), None));
+            .push(Token::new(TokenKind::Eof, "".to_string(), None, self.line));
         self.tokens.clone()
     }
 
@@ -75,15 +54,11 @@ impl<'a> Scanner<'a> {
     }
 
     fn peek_next(&self) -> char {
-        if self.current + 1 >= self.source.len() {
-            '\0'
-        } else {
-            self.source.chars().nth(self.current + 1).unwrap_or('\0')
-        }
+        self.source.chars().nth(self.current + 1).unwrap_or('\0')
     }
 
     fn is_alpha(&self, c: char) -> bool {
-        (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+        c.is_ascii_alphabetic() || c == '_'
     }
 
     fn is_alpha_numeric(&self, c: char) -> bool {
@@ -106,13 +81,14 @@ impl<'a> Scanner<'a> {
     fn add_token_with_literal(&mut self, kind: TokenKind, literal: Option<LiteralKind>) {
         let text = &self.source[self.start..self.current];
         self.tokens
-            .push(Token::new(kind, text.to_string(), literal));
+            .push(Token::new(kind, text.to_string(), literal, self.line));
     }
 
     fn scan_token(&mut self) {
         let c = self.advance();
 
         match c {
+            // Single-character tokens
             '(' => self.add_token(TokenKind::LeftParen),
             ')' => self.add_token(TokenKind::RightParen),
             '{' => self.add_token(TokenKind::LeftBrace),
@@ -123,6 +99,8 @@ impl<'a> Scanner<'a> {
             '+' => self.add_token(TokenKind::Plus),
             ';' => self.add_token(TokenKind::Semicolon),
             '*' => self.add_token(TokenKind::Star),
+
+            // Potentially two-character tokens
             '!' => {
                 let token = if self.match_char('=') {
                     TokenKind::BangEqual
@@ -155,6 +133,8 @@ impl<'a> Scanner<'a> {
                 };
                 self.add_token(token);
             }
+
+            // Comments and division
             '/' => {
                 if self.match_char('/') {
                     while self.peek() != '\n' && !self.is_at_end() {
@@ -164,22 +144,18 @@ impl<'a> Scanner<'a> {
                     self.add_token(TokenKind::Slash);
                 }
             }
+
+            // Whitespace
             ' ' | '\r' | '\t' => {}
-            '\n' => {
-                self.line += 1;
-            }
-            '"' => {
-                self.scan_string();
-            }
-            c if c.is_ascii_digit() => {
-                self.scan_number();
-            }
-            c if self.is_alpha(c) => {
-                self.identifier();
-            }
-            _ => {
-                eprintln!("Unexpected character '{}' at line {}", c, self.line);
-            }
+            '\n' => self.line += 1,
+
+            // Literals
+            '"' => self.scan_string(),
+            c if c.is_ascii_digit() => self.scan_number(),
+            c if self.is_alpha(c) => self.identifier(),
+
+            // Unexpected character
+            _ => eprintln!("Unexpected character '{}' at line {}", c, self.line),
         }
     }
 
@@ -197,9 +173,12 @@ impl<'a> Scanner<'a> {
         }
 
         self.advance();
-
-        let _value = &self.source[self.start + 1..self.current - 1];
-        self.add_token_with_literal(TokenKind::String, Some(LiteralKind::String));
+        self.add_token_with_literal(
+            TokenKind::Literal {
+                kind: LiteralKind::String,
+            },
+            Some(LiteralKind::String),
+        );
     }
 
     fn scan_number(&mut self) {
@@ -223,7 +202,10 @@ impl<'a> Scanner<'a> {
             LiteralKind::Int
         };
 
-        self.add_token_with_literal(TokenKind::Number, Some(literal_kind));
+        self.add_token_with_literal(
+            TokenKind::Literal { kind: literal_kind },
+            Some(literal_kind),
+        );
     }
 
     fn identifier(&mut self) {
@@ -232,8 +214,38 @@ impl<'a> Scanner<'a> {
         }
 
         let text = &self.source[self.start..self.current];
-        let keywords = Self::keywords();
-        let token_type = keywords.get(text).copied().unwrap_or(TokenKind::Identifier);
+        let token_type = Self::keywords()
+            .get(text)
+            .copied()
+            .unwrap_or(TokenKind::Literal {
+                kind: LiteralKind::String,
+            });
         self.add_token(token_type);
+    }
+
+    fn keywords() -> &'static HashMap<&'static str, TokenKind> {
+        use std::sync::OnceLock;
+        static KEYWORDS: OnceLock<HashMap<&'static str, TokenKind>> = OnceLock::new();
+
+        KEYWORDS.get_or_init(|| {
+            let mut keywords = HashMap::new();
+            keywords.insert("and", TokenKind::And);
+            keywords.insert("class", TokenKind::Class);
+            keywords.insert("else", TokenKind::Else);
+            keywords.insert("false", TokenKind::False);
+            keywords.insert("for", TokenKind::For);
+            keywords.insert("fun", TokenKind::Fun);
+            keywords.insert("if", TokenKind::If);
+            keywords.insert("nil", TokenKind::Nil);
+            keywords.insert("or", TokenKind::Or);
+            keywords.insert("print", TokenKind::Print);
+            keywords.insert("return", TokenKind::Return);
+            keywords.insert("super", TokenKind::Super);
+            keywords.insert("this", TokenKind::This);
+            keywords.insert("true", TokenKind::True);
+            keywords.insert("var", TokenKind::Var);
+            keywords.insert("while", TokenKind::While);
+            keywords
+        })
     }
 }

@@ -3,54 +3,50 @@ pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
     pub literal: Option<LiteralKind>,
+    pub line: usize,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, lexeme: String, literal: Option<LiteralKind>) -> Token {
-        Token {
+    pub fn new(kind: TokenKind, lexeme: String, literal: Option<LiteralKind>, line: usize) -> Self {
+        Self {
             kind,
             lexeme,
             literal,
-        }
-    }
-    pub fn to_string(&self) -> String {
-        match &self.literal {
-            Some(literal) => format!("{} \"{}\" {}", self.kind, self.lexeme, literal),
-            None => {
-                if self.kind == TokenKind::Eof {
-                    format!("{}", self.kind)
-                } else {
-                    format!("{} \"{}\"", self.kind, self.lexeme)
-                }
-            }
+            line,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot,
-    Minus,
-    Plus,
-    Semicolon,
-    Slash,
-    Star,
-    Bang,
-    BangEqual,
-    Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
-    Identifier,
-    String,
-    Number,
+    Literal { kind: LiteralKind },
+
+    // Single-character tokens (punctuation)
+    LeftParen,  // (
+    RightParen, // )
+    LeftBrace,  // {
+    RightBrace, // }
+    Comma,      // ,
+    Dot,        // .
+    Semicolon,  // ;
+
+    // Operators
+    Minus,   // -
+    Plus,    // +
+    Slash,   // /
+    Star,    // *
+    Bang,    // !
+    Equal,   // =
+    Greater, // >
+    Less,    // <
+
+    // Two-character operators
+    BangEqual,    // !=
+    EqualEqual,   // ==
+    GreaterEqual, // >=
+    LessEqual,    // <=
+
+    // Keywords
     And,
     Class,
     Else,
@@ -67,8 +63,11 @@ pub enum TokenKind {
     True,
     Var,
     While,
+
+    // Special
     Eof,
 }
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LiteralKind {
     Int,
@@ -78,62 +77,80 @@ pub enum LiteralKind {
 
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.lexeme)
+        if self.kind == TokenKind::Eof {
+            write!(f, "{:<12} {:>10} [line {}]", self.kind, "", self.line)
+        } else {
+            write!(
+                f,
+                "{:<12} {:>10} [line {}]",
+                self.kind,
+                format!("\"{}\"", self.lexeme),
+                self.line
+            )
+        }
     }
 }
 
 impl std::fmt::Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TokenKind::LeftParen => write!(f, "LeftParen"),
-            TokenKind::RightParen => write!(f, "RightParen"),
-            TokenKind::LeftBrace => write!(f, "LeftBrace"),
-            TokenKind::RightBrace => write!(f, "RightBrace"),
-            TokenKind::Comma => write!(f, "Comma"),
-            TokenKind::Dot => write!(f, "Dot"),
-            TokenKind::Minus => write!(f, "Minus"),
-            TokenKind::Plus => write!(f, "Plus"),
-            TokenKind::Semicolon => write!(f, "Semicolon"),
-            TokenKind::Slash => write!(f, "Slash"),
-            TokenKind::Star => write!(f, "Star"),
-            TokenKind::Bang => write!(f, "Bang"),
-            TokenKind::BangEqual => write!(f, "BangEqual"),
-            TokenKind::Equal => write!(f, "Equal"),
-            TokenKind::EqualEqual => write!(f, "EqualEqual"),
-            TokenKind::Greater => write!(f, "Greater"),
-            TokenKind::GreaterEqual => write!(f, "GreaterEqual"),
-            TokenKind::Less => write!(f, "Less"),
-            TokenKind::LessEqual => write!(f, "LessEqual"),
-            TokenKind::Identifier => write!(f, "Identifier"),
-            TokenKind::String => write!(f, "String"),
-            TokenKind::Number => write!(f, "Number"),
-            TokenKind::And => write!(f, "And"),
-            TokenKind::Class => write!(f, "Class"),
-            TokenKind::Else => write!(f, "Else"),
-            TokenKind::False => write!(f, "False"),
-            TokenKind::Fun => write!(f, "fun"),
-            TokenKind::For => write!(f, "For"),
-            TokenKind::If => write!(f, "If"),
-            TokenKind::Nil => write!(f, "Nil"),
-            TokenKind::Or => write!(f, "Or"),
-            TokenKind::Print => write!(f, "Print"),
-            TokenKind::Return => write!(f, "Return"),
-            TokenKind::Super => write!(f, "Super"),
-            TokenKind::This => write!(f, "This"),
-            TokenKind::True => write!(f, "True"),
-            TokenKind::Var => write!(f, "Var"),
-            TokenKind::While => write!(f, "While"),
-            TokenKind::Eof => write!(f, "EOF"),
-        }
+        let s = match self {
+            Self::Literal { kind } => return write!(f, "Literal ({})", kind),
+
+            // Punctuation
+            Self::LeftParen => "LeftParen",
+            Self::RightParen => "RightParen",
+            Self::LeftBrace => "LeftBrace",
+            Self::RightBrace => "RightBrace",
+            Self::Comma => "Comma",
+            Self::Dot => "Dot",
+            Self::Semicolon => "Semicolon",
+
+            // Operators
+            Self::Minus => "Minus",
+            Self::Plus => "Plus",
+            Self::Slash => "Slash",
+            Self::Star => "Star",
+            Self::Bang => "Bang",
+            Self::Equal => "Equal",
+            Self::Greater => "Greater",
+            Self::Less => "Less",
+            Self::BangEqual => "BangEqual",
+            Self::EqualEqual => "EqualEqual",
+            Self::GreaterEqual => "GreaterEqual",
+            Self::LessEqual => "LessEqual",
+
+            // Keywords
+            Self::And => "And",
+            Self::Class => "Class",
+            Self::Else => "Else",
+            Self::False => "False",
+            Self::Fun => "fun",
+            Self::For => "For",
+            Self::If => "If",
+            Self::Nil => "Nil",
+            Self::Or => "Or",
+            Self::Print => "Print",
+            Self::Return => "Return",
+            Self::Super => "Super",
+            Self::This => "This",
+            Self::True => "True",
+            Self::Var => "Var",
+            Self::While => "While",
+
+            // Special
+            Self::Eof => "EOF",
+        };
+        write!(f, "{}", s)
     }
 }
 
 impl std::fmt::Display for LiteralKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LiteralKind::Int => write!(f, "int"),
-            LiteralKind::Decimal => write!(f, "decimal"),
-            LiteralKind::String => write!(f, "string"),
-        }
+        let s = match self {
+            Self::Int => "int",
+            Self::Decimal => "decimal",
+            Self::String => "string",
+        };
+        write!(f, "{}", s)
     }
 }

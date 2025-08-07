@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 mod expression;
+mod parser;
 mod scanner;
 mod token;
 
@@ -61,7 +62,15 @@ fn run_prompt() {
 fn run(source: &str) {
     let tokens = scanner::tokenize(source);
 
-    for token in tokens {
-        println!("{}", token.to_string());
+    println!("=== TOKENS ===");
+    for (i, token) in tokens.iter().enumerate() {
+        println!("{:2}: {}", i + 1, token);
+    }
+    println!();
+
+    println!("=== PARSING ===");
+    match parser::parse(tokens) {
+        Ok(expr) => println!("AST: {}", expr),
+        Err(error) => eprintln!("Parse failed: {}", error),
     }
 }
