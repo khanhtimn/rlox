@@ -10,8 +10,6 @@ pub enum ParseError {
         line: usize,
         message: String,
     },
-    #[error("Unexpected end of file")]
-    UnexpectedEof,
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<Expr, ParseError> {
@@ -159,22 +157,21 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
         if self.match_token(TokenKind::False) {
-            return Ok(Expr::literal(LiteralKind::String));
+            return Ok(Expr::literal("false".to_string()));
         }
 
         if self.match_token(TokenKind::True) {
-            return Ok(Expr::literal(LiteralKind::String));
+            return Ok(Expr::literal("true".to_string()));
         }
 
         if self.match_token(TokenKind::Nil) {
-            return Ok(Expr::literal(LiteralKind::String));
+            return Ok(Expr::literal("nil".to_string()));
         }
 
         match &self.peek().kind {
-            TokenKind::Literal { kind } => {
-                let literal_kind = *kind;
-                self.advance();
-                return Ok(Expr::literal(literal_kind));
+            TokenKind::Number | TokenKind::String => {
+                let token = self.advance();
+                return Ok(Expr::literal(token.lexeme.clone()));
             }
             _ => {}
         }
@@ -269,82 +266,52 @@ impl Parser {
 mod tests {
     use super::*;
 
-    fn create_token(kind: TokenKind, lexeme: &str, literal: Option<LiteralKind>) -> Token {
-        Token::new(kind, lexeme.to_string(), literal, 1)
+    fn create_token(kind: TokenKind, lexeme: &str, _literal: Option<()>) -> Token {
+        Token::new(kind, lexeme.to_string(), 1)
     }
 
     #[test]
     fn test_parse_number() {
         let tokens = vec![
-            create_token(
-                TokenKind::Literal {
-                    kind: LiteralKind::Int,
-                },
-                "42",
-                Some(LiteralKind::Int),
-            ),
+            create_token(TokenKind::Number, "42", None),
             create_token(TokenKind::Eof, "", None),
         ];
         let expr = parse(tokens).unwrap();
-        assert_eq!(expr.to_string(), "int");
+        assert_eq!(expr.to_string(), "42");
     }
 
     #[test]
     fn test_parse_binary_expression() {
         let tokens = vec![
-            create_token(
-                TokenKind::Literal {
-                    kind: LiteralKind::Int,
-                },
-                "1",
-                Some(LiteralKind::Int),
-            ),
+            create_token(TokenKind::Number, "1", None),
             create_token(TokenKind::Plus, "+", None),
-            create_token(
-                TokenKind::Literal {
-                    kind: LiteralKind::Int,
-                },
-                "2",
-                Some(LiteralKind::Int),
-            ),
+            create_token(TokenKind::Number, "2", None),
             create_token(TokenKind::Eof, "", None),
         ];
         let expr = parse(tokens).unwrap();
-        assert_eq!(expr.to_string(), "(+ int int)");
+        assert_eq!(expr.to_string(), "(+ 1 2)");
     }
 
     #[test]
     fn test_parse_unary_expression() {
         let tokens = vec![
             create_token(TokenKind::Minus, "-", None),
-            create_token(
-                TokenKind::Literal {
-                    kind: LiteralKind::Int,
-                },
-                "42",
-                Some(LiteralKind::Int),
-            ),
+            create_token(TokenKind::Number, "42", None),
             create_token(TokenKind::Eof, "", None),
         ];
         let expr = parse(tokens).unwrap();
-        assert_eq!(expr.to_string(), "(- int)");
+        assert_eq!(expr.to_string(), "(- 42)");
     }
 
     #[test]
     fn test_parse_grouping() {
         let tokens = vec![
             create_token(TokenKind::LeftParen, "(", None),
-            create_token(
-                TokenKind::Literal {
-                    kind: LiteralKind::Int,
-                },
-                "42",
-                Some(LiteralKind::Int),
-            ),
+            create_token(TokenKind::Number, "42", None),
             create_token(TokenKind::RightParen, ")", None),
             create_token(TokenKind::Eof, "", None),
         ];
         let expr = parse(tokens).unwrap();
-        assert_eq!(expr.to_string(), "(group int)");
+        assert_eq!(expr.to_string(), "(group 42)");
     }
 }

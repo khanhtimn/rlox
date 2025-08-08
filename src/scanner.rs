@@ -32,7 +32,7 @@ impl<'a> Scanner<'a> {
         }
 
         self.tokens
-            .push(Token::new(TokenKind::Eof, "".to_string(), None, self.line));
+            .push(Token::new(TokenKind::Eof, "".to_string(), self.line));
         self.tokens.clone()
     }
 
@@ -75,13 +75,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn add_token(&mut self, kind: TokenKind) {
-        self.add_token_with_literal(kind, None);
-    }
-
-    fn add_token_with_literal(&mut self, kind: TokenKind, literal: Option<LiteralKind>) {
         let text = &self.source[self.start..self.current];
         self.tokens
-            .push(Token::new(kind, text.to_string(), literal, self.line));
+            .push(Token::new(kind, text.to_string(), self.line));
     }
 
     fn scan_token(&mut self) {
@@ -173,12 +169,7 @@ impl<'a> Scanner<'a> {
         }
 
         self.advance();
-        self.add_token_with_literal(
-            TokenKind::Literal {
-                kind: LiteralKind::String,
-            },
-            Some(LiteralKind::String),
-        );
+        self.add_token(TokenKind::String);
     }
 
     fn scan_number(&mut self) {
@@ -186,9 +177,7 @@ impl<'a> Scanner<'a> {
             self.advance();
         }
 
-        let mut is_decimal = false;
         if self.peek() == '.' && self.peek_next().is_ascii_digit() {
-            is_decimal = true;
             self.advance();
 
             while self.peek().is_ascii_digit() {
@@ -196,16 +185,7 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        let literal_kind = if is_decimal {
-            LiteralKind::Decimal
-        } else {
-            LiteralKind::Int
-        };
-
-        self.add_token_with_literal(
-            TokenKind::Literal { kind: literal_kind },
-            Some(literal_kind),
-        );
+        self.add_token(TokenKind::Number);
     }
 
     fn identifier(&mut self) {
@@ -217,9 +197,7 @@ impl<'a> Scanner<'a> {
         let token_type = Self::keywords()
             .get(text)
             .copied()
-            .unwrap_or(TokenKind::Literal {
-                kind: LiteralKind::String,
-            });
+            .unwrap_or(TokenKind::Identifier);
         self.add_token(token_type);
     }
 

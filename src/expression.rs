@@ -1,4 +1,4 @@
-use crate::token::{LiteralKind, Token};
+use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -11,7 +11,7 @@ pub enum Expr {
         expression: Box<Expr>,
     },
     Literal {
-        value: LiteralKind,
+        value: String,
     },
     Unary {
         operator: Token,
@@ -41,7 +41,7 @@ impl Expr {
         }
     }
 
-    pub fn literal(value: LiteralKind) -> Self {
+    pub fn literal(value: String) -> Self {
         Expr::Literal { value }
     }
 }
@@ -72,27 +72,27 @@ impl std::fmt::Display for Expr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::token::{LiteralKind, Token, TokenKind};
+    use crate::token::{Token, TokenKind};
 
     #[test]
     fn test_literal_expression() {
-        let expr = Expr::literal(LiteralKind::Int);
-        assert_eq!(expr.to_string(), "int");
+        let expr = Expr::literal("42".to_string());
+        assert_eq!(expr.to_string(), "42");
     }
 
     #[test]
     fn test_unary_expression() {
-        let token = Token::new(TokenKind::Minus, "-".to_string(), None, 1);
-        let expr = Expr::unary(token, Expr::literal(LiteralKind::Int));
-        assert_eq!(expr.to_string(), "(- int)");
+        let token = Token::new(TokenKind::Minus, "-".to_string(), 1);
+        let expr = Expr::unary(token, Expr::literal("42".to_string()));
+        assert_eq!(expr.to_string(), "(- 42)");
     }
 
     #[test]
     fn test_binary_expression() {
-        let token = Token::new(TokenKind::Plus, "+".to_string(), None, 1);
-        let left = Expr::literal(LiteralKind::Int);
-        let right = Expr::literal(LiteralKind::Decimal);
+        let token = Token::new(TokenKind::Plus, "+".to_string(), 1);
+        let left = Expr::literal("1".to_string());
+        let right = Expr::literal("2".to_string());
         let expr = Expr::binary(left, token, right);
-        assert_eq!(expr.to_string(), "(+ int decimal)");
+        assert_eq!(expr.to_string(), "(+ 1 2)");
     }
 }

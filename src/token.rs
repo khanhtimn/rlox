@@ -2,24 +2,21 @@
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
-    pub literal: Option<LiteralKind>,
     pub line: usize,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, lexeme: String, literal: Option<LiteralKind>, line: usize) -> Self {
-        Self {
-            kind,
-            lexeme,
-            literal,
-            line,
-        }
+    pub fn new(kind: TokenKind, lexeme: String, line: usize) -> Self {
+        Self { kind, lexeme, line }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
-    Literal { kind: LiteralKind },
+    // Literals and identifiers
+    Number,
+    String,
+    Identifier,
 
     // Single-character tokens (punctuation)
     LeftParen,  // (
@@ -68,12 +65,7 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum LiteralKind {
-    Int,
-    Decimal,
-    String,
-}
+// NOTE: LiteralKind removed; literals are represented directly via TokenKind
 
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -94,7 +86,10 @@ impl std::fmt::Display for Token {
 impl std::fmt::Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::Literal { kind } => return write!(f, "Literal ({})", kind),
+            // Literals and identifiers
+            Self::Number => "Number",
+            Self::String => "String",
+            Self::Identifier => "Identifier",
 
             // Punctuation
             Self::LeftParen => "LeftParen",
@@ -139,17 +134,6 @@ impl std::fmt::Display for TokenKind {
 
             // Special
             Self::Eof => "EOF",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-impl std::fmt::Display for LiteralKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Self::Int => "int",
-            Self::Decimal => "decimal",
-            Self::String => "string",
         };
         write!(f, "{}", s)
     }
