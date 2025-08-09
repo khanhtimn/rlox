@@ -50,22 +50,35 @@ impl Interpreter {
 
     fn execute(&mut self, statement: &Stmt) -> Result<(), RuntimeError> {
         match statement {
-            Stmt::Print(expr) => {
+            Stmt::Print { expression: expr } => {
                 let value = self.evaluate(&expr)?;
                 println!("{}", value);
                 Ok(())
             }
-            Stmt::Expr(expr) => {
+            Stmt::Expr { expression: expr } => {
                 let value = self.evaluate(&expr)?;
                 println!("{}", value);
                 Ok(())
             }
-            Stmt::Var(name, initializer) => {
+            Stmt::Var { name, initializer } => {
                 self.eval_var_statement(name, initializer.as_ref())?;
                 Ok(())
             }
-            Stmt::Block(statements) => {
+            Stmt::Block { statements } => {
                 self.eval_block(statements)?;
+                Ok(())
+            }
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond = self.evaluate(condition)?;
+                if !self.is_falsy(&cond) {
+                    self.execute(then_branch)?;
+                } else if let Some(else_b) = else_branch {
+                    self.execute(else_b)?;
+                }
                 Ok(())
             }
         }
@@ -73,7 +86,7 @@ impl Interpreter {
 
     pub fn evaluate(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
-            Expr::Literal(lit) => self.eval_literal(lit),
+            Expr::Literal { kind } => self.eval_literal(kind),
             Expr::Unary { operator, right } => self.eval_unary(operator, right),
             Expr::Binary {
                 left,
@@ -83,6 +96,11 @@ impl Interpreter {
             Expr::Grouping { expression } => self.evaluate(expression),
             Expr::Variable { name } => self.eval_var_expr(name),
             Expr::Assign { name, value } => self.eval_assign_expression(name, value),
+            Expr::Logical {
+                left,
+                operator,
+                right,
+            } => self.eval_logical(left, operator, right),
         }
     }
 
@@ -135,16 +153,12 @@ impl Interpreter {
     fn eval_var_expr(&mut self, name: &Token) -> Result<Value, RuntimeError> {
         self.environment.borrow().get(&name.lexeme, Some(name.span))
     }
-    fn eval_literal(
-        &self,
-        lit: &crate::ast::expression::LiteralKind,
-    ) -> Result<Value, RuntimeError> {
-        use crate::ast::expression::LiteralKind as L;
-        Ok(match lit {
-            L::Nil => Value::Nil,
-            L::Boolean(b) => Value::Boolean(*b),
-            L::Number(n) => Value::Number(*n),
-            L::String(s) => Value::String(s.clone()),
+    fn eval_literal(&self, kind: &LiteralKind) -> Result<Value, RuntimeError> {
+        Ok(match kind {
+            LiteralKind::Nil => Value::Nil,
+            LiteralKind::Boolean(b) => Value::Boolean(*b),
+            LiteralKind::Number(n) => Value::Number(*n),
+            LiteralKind::String(s) => Value::String(s.clone()),
         })
     }
 
@@ -240,6 +254,35 @@ impl Interpreter {
         }
     }
 
+    fn eval_logical(
+        &mut self,
+        left: &Expr,
+        operator: &Token,
+        right: &Expr,
+    ) -> Result<Value, RuntimeError> {
+        let left_val = self.evaluate(left)?;
+
+        match operator.kind {
+            TokenKind::Or => {
+                if !self.is_falsy(&left_val) {
+                    Ok(left_val)
+                } else {
+                    self.evaluate(right)
+                }
+            }
+            TokenKind::And => {
+                if self.is_falsy(&left_val) {
+                    Ok(left_val)
+                } else {
+                    self.evaluate(right)
+                }
+            }
+            _ => Err(RuntimeError::InvalidOperator {
+                op: operator.lexeme.clone(),
+                span: Some(operator.span),
+            }),
+        }
+    }
     fn compare_numbers<F>(
         &self,
         left: Value,

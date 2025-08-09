@@ -106,21 +106,39 @@ impl Parser {
             TokenKind::Semicolon,
             "Expect ';' after variable declaration.",
         )?;
-        Ok(Stmt::Var(name.lexeme, initializer))
+        Ok(Stmt::Var {
+            name: name.lexeme,
+            initializer,
+        })
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
         let stmt = if self.match_token(TokenKind::Print) {
             let value = self.expression()?;
             self.consume(TokenKind::Semicolon, "Expect ';' after value.")?;
-            Stmt::Print(value)
+            Stmt::Print { expression: value }
         } else if self.match_token(TokenKind::LeftBrace) {
             let statements = self.block()?;
-            Stmt::Block(statements)
+            Stmt::Block { statements }
+        } else if self.match_token(TokenKind::If) {
+            self.consume(TokenKind::LeftParen, "Expect '(' after 'if'.")?;
+            let condition = self.expression()?;
+            self.consume(TokenKind::RightParen, "Expect ')' after condition.")?;
+            let then_branch = self.statement()?;
+            let else_branch = if self.match_token(TokenKind::Else) {
+                Some(Box::new(self.statement()?))
+            } else {
+                None
+            };
+            Stmt::If {
+                condition,
+                then_branch: Box::new(then_branch),
+                else_branch,
+            }
         } else {
             let expr = self.expression()?;
             self.consume(TokenKind::Semicolon, "Expect ';' after expression.")?;
-            Stmt::Expr(expr)
+            Stmt::Expr { expression: expr }
         };
         Ok(stmt)
     }
@@ -139,7 +157,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expr, ParseError> {
-        let expr = self.equality()?;
+        let expr = self.logical_or()?;
         if self.match_token(TokenKind::Equal) {
             let equals = self.previous_token().clone();
             let value = self.assignment()?;
@@ -150,6 +168,34 @@ impl Parser {
                 });
             }
             self.error(&equals, "Invalid assignment target.");
+        }
+        Ok(expr)
+    }
+
+    fn logical_or(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.logical_and()?;
+        while self.match_token(TokenKind::Or) {
+            let operator = self.previous_token().clone();
+            let right = self.logical_and()?;
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn logical_and(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.equality()?;
+        while self.match_token(TokenKind::And) {
+            let operator = self.previous_token().clone();
+            let right = self.equality()?;
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
         }
         Ok(expr)
     }
@@ -264,7 +310,6 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
-        use crate::ast::expression::LiteralKind;
         if self.match_token(TokenKind::False) {
             return Ok(Expr::literal(LiteralKind::Boolean(false)));
         }

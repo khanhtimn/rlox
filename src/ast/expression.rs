@@ -18,8 +18,15 @@ pub enum Expr {
     Grouping {
         expression: Box<Expr>,
     },
-    Literal(LiteralKind),
+    Literal {
+        kind: LiteralKind,
+    },
     Unary {
+        operator: Token,
+        right: Box<Expr>,
+    },
+    Logical {
+        left: Box<Expr>,
         operator: Token,
         right: Box<Expr>,
     },
@@ -54,8 +61,8 @@ impl Expr {
         }
     }
 
-    pub fn literal(value: LiteralKind) -> Self {
-        Expr::Literal(value)
+    pub fn literal(kind: LiteralKind) -> Self {
+        Expr::Literal { kind }
     }
 }
 
@@ -72,7 +79,7 @@ impl std::fmt::Display for Expr {
             Expr::Grouping { expression } => {
                 write!(f, "(group {})", expression)
             }
-            Expr::Literal(lit) => match lit {
+            Expr::Literal { kind } => match kind {
                 LiteralKind::Number(n) => {
                     let mut s = n.to_string();
                     if s.ends_with(".0") {
@@ -92,6 +99,13 @@ impl std::fmt::Display for Expr {
             }
             Expr::Assign { name, value } => {
                 write!(f, "({} = {})", name.lexeme, value)
+            }
+            Expr::Logical {
+                left,
+                operator,
+                right,
+            } => {
+                write!(f, "({} {} {})", operator.lexeme, left, right)
             }
         }
     }
