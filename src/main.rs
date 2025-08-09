@@ -1,12 +1,9 @@
 use clap::Parser;
+use rustyline::{DefaultEditor, error::ReadlineError};
 use std::fs;
-use std::io::{self, Write};
 use std::process;
-mod expression;
-mod interpreter;
-mod parser;
-mod scanner;
-mod token;
+
+use rlox::*;
 
 #[derive(Parser)]
 #[command(name = "rlox")]
@@ -27,7 +24,10 @@ fn main() {
 fn run_file(path: &str) {
     match fs::read_to_string(path) {
         Ok(source) => {
-            run(&source);
+            let mut interpreter = interpreter::Interpreter::new();
+            if let Err(err) = run_with(&mut interpreter, &source) {
+                eprintln!("{}", rlox::diagnostics::render_error(err, &source, path));
+            }
         }
         Err(err) => {
             eprintln!("Error reading file '{}': {}", path, err);
@@ -37,41 +37,35 @@ fn run_file(path: &str) {
 }
 
 fn run_prompt() {
-    println!("Lox REPL - Enter expressions (Ctrl+C to exit)");
+    println!("RLox - A Rust implementation of the Lox programming language");
+    println!("Press Ctrl+C or Ctrl+D to exit.");
 
+    let mut rl = DefaultEditor::new().expect("failed to initialize line editor");
+    let mut interpreter = interpreter::Interpreter::new();
     loop {
-        print!("> ");
-        io::stdout().flush().unwrap();
-
-        let mut line = String::new();
-        match io::stdin().read_line(&mut line) {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                let line = line.trim();
-                if !line.is_empty() {
-                    run(line);
+        match rl.readline("> ") {
+            Ok(line) => {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    rl.add_history_entry(line.as_str()).ok();
+                    if let Err(err) = run_with(&mut interpreter, trimmed) {
+                        eprintln!(
+                            "{}",
+                            rlox::diagnostics::render_error(err, trimmed, "<repl>")
+                        );
+                    }
                 }
+            }
+            Err(ReadlineError::Interrupted) => {
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
             }
             Err(err) => {
                 eprintln!("Error reading input: {}", err);
                 break;
             }
         }
-    }
-}
-
-fn run(source: &str) {
-    let tokens = scanner::tokenize(source);
-
-    println!("=== TOKENS ===");
-    for (i, token) in tokens.iter().enumerate() {
-        println!("{:2}: {}", i + 1, token);
-    }
-    println!();
-
-    println!("=== PARSING ===");
-    match parser::parse(tokens) {
-        Ok(expr) => println!("AST: {}", expr),
-        Err(error) => eprintln!("Parse failed: {}", error),
     }
 }

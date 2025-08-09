@@ -1,31 +1,58 @@
 use crate::token::*;
 use std::collections::HashMap;
+use thiserror::Error;
 
-pub fn tokenize(source: &str) -> Vec<Token> {
+#[derive(Debug, Error)]
+pub enum ScanError {
+    #[error("Scan error: Unexpected character '{ch}' at line {line}, column {col}")]
+    UnexpectedCharacter { ch: char, line: usize, col: usize },
+
+    #[error("Scan error: Unterminated string at line {line}")]
+    UnterminatedString { line: usize },
+}
+
+impl ScanError {
+    pub fn line(&self) -> usize {
+        match self {
+            ScanError::UnexpectedCharacter { line, .. } => *line,
+            ScanError::UnterminatedString { line } => *line,
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("scan failed with {0} error(s)")]
+pub struct ScanErrors(pub usize, pub Vec<ScanError>);
+
+pub fn tokenize(source: &str) -> Result<Vec<Token>, ScanErrors> {
     let mut scanner = Scanner::new(source);
     scanner.scan_tokens()
 }
 
-struct Scanner<'a> {
-    source: &'a str,
+struct Scanner {
+    chars: Vec<char>,
     tokens: Vec<Token>,
     start: usize,
     current: usize,
     line: usize,
+    col: usize,
+    errors: Vec<ScanError>,
 }
 
-impl<'a> Scanner<'a> {
-    fn new(source: &'a str) -> Self {
+impl Scanner {
+    fn new(source: &str) -> Self {
         Self {
-            source,
+            chars: source.chars().collect(),
             tokens: Vec::new(),
             start: 0,
             current: 0,
             line: 1,
+            col: 0,
+            errors: Vec::new(),
         }
     }
 
-    fn scan_tokens(&mut self) -> Vec<Token> {
+    fn scan_tokens(&mut self) -> Result<Vec<Token>, ScanErrors> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
@@ -33,28 +60,36 @@ impl<'a> Scanner<'a> {
 
         self.tokens
             .push(Token::new(TokenKind::Eof, "".to_string(), self.line));
-        self.tokens.clone()
-    }
 
-    fn is_at_end(&self) -> bool {
-        self.current >= self.source.len()
-    }
-
-    fn advance(&mut self) -> char {
-        if let Some(c) = self.source.chars().nth(self.current) {
-            self.current += c.len_utf8();
-            c
+        if self.errors.is_empty() {
+            Ok(std::mem::take(&mut self.tokens))
         } else {
-            '\0'
+            Err(ScanErrors(
+                self.errors.len(),
+                std::mem::take(&mut self.errors),
+            ))
         }
     }
 
+    fn is_at_end(&self) -> bool {
+        self.current >= self.chars.len()
+    }
+
+    fn advance(&mut self) -> char {
+        let ch = self.chars.get(self.current).copied().unwrap_or('\0');
+        if ch != '\0' {
+            self.current += 1;
+            self.col += 1;
+        }
+        ch
+    }
+
     fn peek(&self) -> char {
-        self.source.chars().nth(self.current).unwrap_or('\0')
+        self.chars.get(self.current).copied().unwrap_or('\0')
     }
 
     fn peek_next(&self) -> char {
-        self.source.chars().nth(self.current + 1).unwrap_or('\0')
+        self.chars.get(self.current + 1).copied().unwrap_or('\0')
     }
 
     fn is_alpha(&self, c: char) -> bool {
@@ -69,15 +104,17 @@ impl<'a> Scanner<'a> {
         if self.is_at_end() || self.peek() != expected {
             false
         } else {
-            self.current += expected.len_utf8();
+            self.current += 1;
+            self.col += 1;
             true
         }
     }
 
     fn add_token(&mut self, kind: TokenKind) {
-        let text = &self.source[self.start..self.current];
-        self.tokens
-            .push(Token::new(kind, text.to_string(), self.line));
+        let lexeme: String = self.chars[self.start..self.current].iter().collect();
+        let col_start = self.col.saturating_sub(lexeme.chars().count());
+        let span = Span::new(self.start, self.current, self.line, col_start, self.col);
+        self.tokens.push(Token::with_span(kind, lexeme, span));
     }
 
     fn scan_token(&mut self) {
@@ -143,7 +180,10 @@ impl<'a> Scanner<'a> {
 
             // Whitespace
             ' ' | '\r' | '\t' => {}
-            '\n' => self.line += 1,
+            '\n' => {
+                self.line += 1;
+                self.col = 0;
+            }
 
             // Literals
             '"' => self.scan_string(),
@@ -151,7 +191,11 @@ impl<'a> Scanner<'a> {
             c if self.is_alpha(c) => self.identifier(),
 
             // Unexpected character
-            _ => eprintln!("Unexpected character '{}' at line {}", c, self.line),
+            _ => self.errors.push(ScanError::UnexpectedCharacter {
+                ch: c,
+                line: self.line,
+                col: self.col.saturating_sub(1),
+            }),
         }
     }
 
@@ -164,7 +208,8 @@ impl<'a> Scanner<'a> {
         }
 
         if self.is_at_end() {
-            eprintln!("Unterminated string at line {}", self.line);
+            self.errors
+                .push(ScanError::UnterminatedString { line: self.line });
             return;
         }
 
@@ -193,9 +238,9 @@ impl<'a> Scanner<'a> {
             self.advance();
         }
 
-        let text = &self.source[self.start..self.current];
+        let text: String = self.chars[self.start..self.current].iter().collect();
         let token_type = Self::keywords()
-            .get(text)
+            .get(text.as_str())
             .copied()
             .unwrap_or(TokenKind::Identifier);
         self.add_token(token_type);

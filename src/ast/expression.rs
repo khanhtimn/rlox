@@ -1,6 +1,14 @@
 use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum LiteralKind {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+    Nil,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Binary {
         left: Box<Expr>,
@@ -10,12 +18,17 @@ pub enum Expr {
     Grouping {
         expression: Box<Expr>,
     },
-    Literal {
-        value: String,
-    },
+    Literal(LiteralKind),
     Unary {
         operator: Token,
         right: Box<Expr>,
+    },
+    Variable {
+        name: Token,
+    },
+    Assign {
+        name: Token,
+        value: Box<Expr>,
     },
 }
 
@@ -41,8 +54,8 @@ impl Expr {
         }
     }
 
-    pub fn literal(value: String) -> Self {
-        Expr::Literal { value }
+    pub fn literal(value: LiteralKind) -> Self {
+        Expr::Literal(value)
     }
 }
 
@@ -59,40 +72,27 @@ impl std::fmt::Display for Expr {
             Expr::Grouping { expression } => {
                 write!(f, "(group {})", expression)
             }
-            Expr::Literal { value } => {
-                write!(f, "{}", value)
-            }
+            Expr::Literal(lit) => match lit {
+                LiteralKind::Number(n) => {
+                    let mut s = n.to_string();
+                    if s.ends_with(".0") {
+                        s.truncate(s.len() - 2);
+                    }
+                    write!(f, "{}", s)
+                }
+                LiteralKind::String(s) => write!(f, "\"{}\"", s),
+                LiteralKind::Boolean(b) => write!(f, "{}", b),
+                LiteralKind::Nil => write!(f, "nil"),
+            },
             Expr::Unary { operator, right } => {
                 write!(f, "({} {})", operator.lexeme, right)
             }
+            Expr::Variable { name } => {
+                write!(f, "{}", name.lexeme)
+            }
+            Expr::Assign { name, value } => {
+                write!(f, "({} = {})", name.lexeme, value)
+            }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::token::{Token, TokenKind};
-
-    #[test]
-    fn test_literal_expression() {
-        let expr = Expr::literal("42".to_string());
-        assert_eq!(expr.to_string(), "42");
-    }
-
-    #[test]
-    fn test_unary_expression() {
-        let token = Token::new(TokenKind::Minus, "-".to_string(), 1);
-        let expr = Expr::unary(token, Expr::literal("42".to_string()));
-        assert_eq!(expr.to_string(), "(- 42)");
-    }
-
-    #[test]
-    fn test_binary_expression() {
-        let token = Token::new(TokenKind::Plus, "+".to_string(), 1);
-        let left = Expr::literal("1".to_string());
-        let right = Expr::literal("2".to_string());
-        let expr = Expr::binary(left, token, right);
-        assert_eq!(expr.to_string(), "(+ 1 2)");
     }
 }

@@ -1,24 +1,76 @@
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+    pub line: usize,
+    pub col_start: usize,
+    pub col_end: usize,
+}
+
+impl Span {
+    pub fn new(start: usize, end: usize, line: usize, col_start: usize, col_end: usize) -> Self {
+        Self {
+            start,
+            end,
+            line,
+            col_start,
+            col_end,
+        }
+    }
+
+    pub fn line_bounds(source: &str, line: usize) -> (usize, usize) {
+        let mut start = 0usize;
+        let mut current_line = 1usize;
+        for (idx, ch) in source.char_indices() {
+            if current_line == line {
+                break;
+            }
+            if ch == '\n' {
+                current_line += 1;
+                start = idx + 1;
+            }
+        }
+        let mut end = start;
+        for (idx, ch) in source[start..].char_indices() {
+            if ch == '\n' {
+                end = start + idx;
+                break;
+            }
+            end = start + idx + 1;
+        }
+        (start, end)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
-    pub line: usize,
+    pub span: Span,
 }
 
 impl Token {
     pub fn new(kind: TokenKind, lexeme: String, line: usize) -> Self {
-        Self { kind, lexeme, line }
+        Self {
+            kind,
+            lexeme,
+            span: Span::new(0, 0, line, 0, 0),
+        }
+    }
+
+    pub fn with_span(kind: TokenKind, lexeme: String, span: Span) -> Self {
+        Self { kind, lexeme, span }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
-    // Literals and identifiers
+    // Literals
     Number,
     String,
     Identifier,
 
-    // Single-character tokens (punctuation)
+    // Single-character
     LeftParen,  // (
     RightParen, // )
     LeftBrace,  // {
@@ -37,7 +89,7 @@ pub enum TokenKind {
     Greater, // >
     Less,    // <
 
-    // Two-character operators
+    // Two-character
     BangEqual,    // !=
     EqualEqual,   // ==
     GreaterEqual, // >=
@@ -65,19 +117,17 @@ pub enum TokenKind {
     Eof,
 }
 
-// NOTE: LiteralKind removed; literals are represented directly via TokenKind
-
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.kind == TokenKind::Eof {
-            write!(f, "{:<12} {:>10} [line {}]", self.kind, "", self.line)
+            write!(f, "{:<12} {:>10} [line {}]", self.kind, "", self.span.line)
         } else {
             write!(
                 f,
                 "{:<12} {:>10} [line {}]",
                 self.kind,
                 format!("\"{}\"", self.lexeme),
-                self.line
+                self.span.line
             )
         }
     }
@@ -86,12 +136,11 @@ impl std::fmt::Display for Token {
 impl std::fmt::Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            // Literals and identifiers
             Self::Number => "Number",
             Self::String => "String",
             Self::Identifier => "Identifier",
 
-            // Punctuation
+            // Single-character
             Self::LeftParen => "LeftParen",
             Self::RightParen => "RightParen",
             Self::LeftBrace => "LeftBrace",
@@ -100,7 +149,7 @@ impl std::fmt::Display for TokenKind {
             Self::Dot => "Dot",
             Self::Semicolon => "Semicolon",
 
-            // Operators
+            // Two-character
             Self::Minus => "Minus",
             Self::Plus => "Plus",
             Self::Slash => "Slash",
