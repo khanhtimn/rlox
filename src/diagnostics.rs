@@ -24,11 +24,16 @@ fn render_scan_errors(
     let file_id: &'static str = Box::leak(file_name.to_string().into_boxed_str());
     for e in errors {
         let clr = Color::Red;
-        let (start, end) = Span::line_bounds(source, e.line());
+        let s = e.span();
+        let (start, end) = (s.start, s.end);
         let mut buf = Vec::new();
         Report::build(ReportKind::Error, (file_id, start..end))
             .with_message(e.to_string())
-            .with_label(Label::new((file_id, start..end)).with_color(clr))
+            .with_label(
+                Label::new((file_id, start..end))
+                    .with_message("here")
+                    .with_color(clr),
+            )
             .finish()
             .write(sources([(file_id, source)]), &mut buf)
             .ok();
@@ -47,18 +52,17 @@ fn render_parse_errors(
     let file_id: &'static str = Box::leak(file_name.to_string().into_boxed_str());
     for e in errors {
         let clr = Color::Yellow;
-        let (start, end) = match e {
-            crate::parser::ParseError::UnexpectedToken {
-                span: Some((s, e)), ..
-            } => (*s, *e),
-            crate::parser::ParseError::UnexpectedToken { line, .. } => {
-                Span::line_bounds(source, *line)
-            }
-        };
+        let (start, end) = e
+            .primary_span()
+            .unwrap_or_else(|| Span::line_bounds(source, e.line()));
         let mut buf = Vec::new();
         Report::build(ReportKind::Error, (file_id, start..end))
             .with_message(e.to_string())
-            .with_label(Label::new((file_id, start..end)).with_color(clr))
+            .with_label(
+                Label::new((file_id, start..end))
+                    .with_message("here")
+                    .with_color(clr),
+            )
             .finish()
             .write(sources([(file_id, source)]), &mut buf)
             .ok();
@@ -79,7 +83,11 @@ fn render_runtime_errors(err: Error, source: &str, file_name: &str) -> String {
             let mut buf = Vec::new();
             Report::build(ReportKind::Error, (file_id, start..end))
                 .with_message(msg)
-                .with_label(Label::new((file_id, start..end)).with_color(clr))
+                .with_label(
+                    Label::new((file_id, start..end))
+                        .with_message("here")
+                        .with_color(clr),
+                )
                 .finish()
                 .write(sources([(file_id, source)]), &mut buf)
                 .ok();

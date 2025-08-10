@@ -31,12 +31,19 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::UnexpectedToken {
-                message, expected, ..
+                message,
+                expected,
+                token,
+                ..
             } => {
                 if let Some(exp) = expected {
-                    write!(f, "Syntax error: {}\nexpected: {}", message, exp)
+                    write!(
+                        f,
+                        "Syntax error: {}\nexpected: {}, found: {}",
+                        message, exp, token
+                    )
                 } else {
-                    write!(f, "Syntax error: {}", message)
+                    write!(f, "Syntax error: {}\nfound: {}", message, token)
                 }
             }
         }
