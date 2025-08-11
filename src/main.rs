@@ -8,7 +8,9 @@ use rlox::*;
 #[derive(Parser)]
 #[command(name = "rlox")]
 #[command(about = "A Rust implementation of the Lox programming language")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Args {
+    #[arg(help = "Script file to execute. If not provided, starts an interactive REPL")]
     script: Option<String>,
 }
 
