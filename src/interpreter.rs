@@ -56,8 +56,7 @@ impl Interpreter {
                 Ok(())
             }
             Stmt::Expr { expression: expr } => {
-                let value = self.evaluate(&expr)?;
-                println!("{}", value);
+                self.evaluate(&expr)?;
                 Ok(())
             }
             Stmt::Var { name, initializer } => {
@@ -73,12 +72,11 @@ impl Interpreter {
                 then_branch,
                 else_branch,
             } => {
-                let cond = self.evaluate(condition)?;
-                if !self.is_falsy(&cond) {
-                    self.execute(then_branch)?;
-                } else if let Some(else_b) = else_branch {
-                    self.execute(else_b)?;
-                }
+                self.eval_if(condition, then_branch, else_branch.as_deref())?;
+                Ok(())
+            }
+            Stmt::While { condition, body } => {
+                self.eval_while(condition, body)?;
                 Ok(())
             }
         }
@@ -102,6 +100,32 @@ impl Interpreter {
                 right,
             } => self.eval_logical(left, operator, right),
         }
+    }
+
+    fn eval_if(
+        &mut self,
+        condition: &Expr,
+        then_branch: &Stmt,
+        else_branch: Option<&Stmt>,
+    ) -> Result<(), RuntimeError> {
+        let cond = self.evaluate(condition)?;
+        if !self.is_falsy(&cond) {
+            self.execute(then_branch)?;
+        } else if let Some(else_b) = else_branch {
+            self.execute(else_b)?;
+        }
+        Ok(())
+    }
+
+    fn eval_while(&mut self, condition: &Expr, body: &Stmt) -> Result<(), RuntimeError> {
+        loop {
+            let cond_val = self.evaluate(condition)?;
+            if self.is_falsy(&cond_val) {
+                break;
+            }
+            self.execute(body)?;
+        }
+        Ok(())
     }
 
     fn eval_assign_expression(

@@ -120,13 +120,13 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        let stmt = if self.match_token(TokenKind::Print) {
+        if self.match_token(TokenKind::Print) {
             let value = self.expression()?;
             self.consume(TokenKind::Semicolon, "Expect ';' after value.")?;
-            Stmt::Print { expression: value }
+            Ok(Stmt::Print { expression: value })
         } else if self.match_token(TokenKind::LeftBrace) {
             let statements = self.block()?;
-            Stmt::Block { statements }
+            Ok(Stmt::Block { statements })
         } else if self.match_token(TokenKind::If) {
             self.consume(TokenKind::LeftParen, "Expect '(' after 'if'.")?;
             let condition = self.expression()?;
@@ -137,17 +137,70 @@ impl Parser {
             } else {
                 None
             };
-            Stmt::If {
+            Ok(Stmt::If {
                 condition,
                 then_branch: Box::new(then_branch),
                 else_branch,
+            })
+        } else if self.match_token(TokenKind::While) {
+            self.consume(TokenKind::LeftParen, "Expect '(' after 'while'.")?;
+            let condition = self.expression()?;
+            self.consume(TokenKind::RightParen, "Expect ')' after condition.")?;
+            let body = self.statement()?;
+            Ok(Stmt::While {
+                condition,
+                body: Box::new(body),
+            })
+        } else if self.match_token(TokenKind::For) {
+            self.consume(TokenKind::LeftParen, "Expect '(' after 'for'.")?;
+            let initializer = if self.match_token(TokenKind::Semicolon) {
+                None
+            } else if self.match_token(TokenKind::Var) {
+                Some(self.var_declaration()?)
+            } else {
+                let expr = self.expression()?;
+                self.consume(TokenKind::Semicolon, "Expect ';' after for initializer.")?;
+                Some(Stmt::Expr { expression: expr })
+            };
+            let condition = if !self.match_token(TokenKind::Semicolon) {
+                Some(self.expression()?)
+            } else {
+                None
+            };
+            self.consume(TokenKind::Semicolon, "Expect ';' after loop condition.")?;
+            let increment = if !self.match_token(TokenKind::RightParen) {
+                Some(self.expression()?)
+            } else {
+                None
+            };
+            self.consume(TokenKind::RightParen, "Expect ')' after for clauses.")?;
+
+            let mut body = self.statement()?;
+
+            if let Some(inc) = increment {
+                body = Stmt::Block {
+                    statements: vec![body, Stmt::Expr { expression: inc }],
+                };
+            }
+
+            let while_condition = condition.unwrap_or(Expr::literal(LiteralKind::Boolean(true)));
+            let while_stmt = Stmt::While {
+                condition: while_condition,
+                body: Box::new(body),
+            };
+
+            if let Some(init) = initializer {
+                Ok(Stmt::Block {
+                    statements: vec![init, while_stmt],
+                })
+            } else {
+                Ok(while_stmt)
             }
         } else {
             let expr = self.expression()?;
             self.consume(TokenKind::Semicolon, "Expect ';' after expression.")?;
-            Stmt::Expr { expression: expr }
-        };
-        Ok(stmt)
+            Ok(Stmt::Expr { expression: expr })
+        }
     }
 
     fn block(&mut self) -> Result<Vec<Stmt>, ParseError> {
