@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::environment::{EnvRef, Environment};
 use crate::token::*;
-use crate::value::Value;
+use crate::value::{CallableValue, Function, NativeFunction, Value};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,6 +17,9 @@ pub enum RuntimeError {
 
     #[error("Runtime error: Invalid operator: {op}")]
     InvalidOperator { op: String, span: Option<Span> },
+
+    #[error("return")]
+    Return(Value),
 }
 
 impl RuntimeError {
@@ -26,6 +29,7 @@ impl RuntimeError {
             RuntimeError::UndefinedVariable { span, .. } => *span,
             RuntimeError::DivisionByZero { span } => *span,
             RuntimeError::InvalidOperator { span, .. } => *span,
+            RuntimeError::Return(_) => None,
         }
     }
 }
@@ -36,11 +40,27 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self {
-            environment: Environment::new(),
-        }
+        let env = Environment::new();
+        env.borrow_mut().define(
+            "print".to_string(),
+            Value::Callable(CallableValue::NativeFunction(NativeFunction {
+                name: "print",
+                arity: 1,
+                function: native_print,
+            })),
+        );
+        Self { environment: env }
     }
+}
 
+fn native_print(args: Vec<Value>) -> Value {
+    if let Some(v) = args.get(0) {
+        println!("{}", v);
+    }
+    Value::Nil
+}
+
+impl Interpreter {
     pub fn interpret(&mut self, statements: Vec<Stmt>) -> Result<(), RuntimeError> {
         for statement in &statements {
             self.execute(statement)?;
@@ -50,11 +70,6 @@ impl Interpreter {
 
     fn execute(&mut self, statement: &Stmt) -> Result<(), RuntimeError> {
         match statement {
-            Stmt::Print { expression: expr } => {
-                let value = self.evaluate(&expr)?;
-                println!("{}", value);
-                Ok(())
-            }
             Stmt::Expr { expression: expr } => {
                 self.evaluate(&expr)?;
                 Ok(())
@@ -79,6 +94,22 @@ impl Interpreter {
                 self.eval_while(condition, body)?;
                 Ok(())
             }
+            Stmt::Return { value } => {
+                let ret = if let Some(expr) = value {
+                    self.evaluate(expr)?
+                } else {
+                    Value::Nil
+                };
+                return Err(RuntimeError::Return(ret));
+            }
+            Stmt::Function {
+                name,
+                parameters,
+                body,
+            } => {
+                self.eval_function(name, parameters, body)?;
+                Ok(())
+            }
         }
     }
 
@@ -99,7 +130,81 @@ impl Interpreter {
                 operator,
                 right,
             } => self.eval_logical(left, operator, right),
+            Expr::Call {
+                callee,
+                paren,
+                arguments,
+            } => self.eval_call(callee, paren, arguments),
         }
+    }
+
+    fn eval_call(
+        &mut self,
+        callee: &Expr,
+        paren: &Token,
+        arguments: &Vec<Expr>,
+    ) -> Result<Value, RuntimeError> {
+        let callee_val = self.evaluate(callee)?;
+        let arguments_val = arguments
+            .iter()
+            .map(|a| self.evaluate(a))
+            .collect::<Result<Vec<Value>, RuntimeError>>()?;
+        match callee_val {
+            Value::Callable(func) => {
+                if func.arity() != arguments_val.len() {
+                    return Err(RuntimeError::TypeError {
+                        message: format!(
+                            "Expected {} arguments but got {}",
+                            func.arity(),
+                            arguments_val.len()
+                        ),
+                        span: Some(paren.span),
+                    });
+                }
+                match func {
+                    CallableValue::NativeFunction(native) => Ok((native.function)(arguments_val)),
+                    CallableValue::Function(fun) => {
+                        let call_env = Environment::new_enclosed(fun.closure.clone());
+                        {
+                            let mut env_mut = call_env.borrow_mut();
+                            for (param, arg) in fun.parameters.iter().zip(arguments_val.into_iter())
+                            {
+                                env_mut.define(param.clone(), arg);
+                            }
+                        }
+                        match self.execute_block(&fun.body, call_env) {
+                            Ok(()) => Ok(Value::Nil),
+                            Err(RuntimeError::Return(v)) => Ok(v),
+                            Err(e) => Err(e),
+                        }
+                    }
+                }
+            }
+            _ => Err(RuntimeError::TypeError {
+                message: format!("Can only call functions and classes, got {:?}", callee_val),
+                span: Some(paren.span),
+            }),
+        }
+    }
+
+    fn eval_function(
+        &mut self,
+        name: &str,
+        parameters: &Vec<String>,
+        body: &Vec<Stmt>,
+    ) -> Result<(), RuntimeError> {
+        let func = Function {
+            name: name.to_string(),
+            parameters: parameters.clone(),
+            body: body.clone(),
+            closure: self.environment.clone(),
+            arity: parameters.len(),
+        };
+        self.environment.borrow_mut().define(
+            name.to_string(),
+            Value::Callable(CallableValue::Function(func)),
+        );
+        Ok(())
     }
 
     fn eval_if(

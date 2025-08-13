@@ -284,7 +284,6 @@ impl<'a> Scanner<'a> {
             keywords.insert("if", TokenKind::If);
             keywords.insert("nil", TokenKind::Nil);
             keywords.insert("or", TokenKind::Or);
-            keywords.insert("print", TokenKind::Print);
             keywords.insert("return", TokenKind::Return);
             keywords.insert("super", TokenKind::Super);
             keywords.insert("this", TokenKind::This);

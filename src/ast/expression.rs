@@ -37,6 +37,11 @@ pub enum Expr {
         name: Token,
         value: Box<Expr>,
     },
+    Call {
+        callee: Box<Expr>,
+        paren: Token,
+        arguments: Vec<Expr>,
+    },
 }
 
 impl Expr {
@@ -106,6 +111,23 @@ impl std::fmt::Display for Expr {
                 right,
             } => {
                 write!(f, "({} {} {})", operator.lexeme, left, right)
+            }
+            Expr::Call {
+                callee,
+                paren,
+                arguments,
+            } => {
+                write!(
+                    f,
+                    "({} {} {})",
+                    callee,
+                    paren.lexeme,
+                    arguments
+                        .iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
             }
         }
     }

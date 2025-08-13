@@ -2,9 +2,6 @@ use crate::ast::Expr;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Print {
-        expression: Expr,
-    },
     Expr {
         expression: Expr,
     },
@@ -24,12 +21,19 @@ pub enum Stmt {
         condition: Expr,
         body: Box<Stmt>,
     },
+    Return {
+        value: Option<Expr>,
+    },
+    Function {
+        name: String,
+        parameters: Vec<String>,
+        body: Vec<Stmt>,
+    },
 }
 
 impl std::fmt::Display for Stmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Stmt::Print { expression } => write!(f, "print {}", expression),
             Stmt::Expr { expression } => write!(f, "{}", expression),
             Stmt::Var {
                 name,
@@ -62,6 +66,24 @@ impl std::fmt::Display for Stmt {
             Stmt::While { condition, body } => {
                 write!(f, "while {} {{", condition)?;
                 write!(f, "{}", body)?;
+                write!(f, "}}")
+            }
+            Stmt::Return { value } => {
+                if let Some(expr) = value {
+                    write!(f, "return {};", expr)
+                } else {
+                    write!(f, "return;")
+                }
+            }
+            Stmt::Function {
+                name,
+                parameters,
+                body,
+            } => {
+                write!(f, "fn {} ({}) {{", name, parameters.join(", "))?;
+                for statement in body {
+                    write!(f, "{}", statement)?;
+                }
                 write!(f, "}}")
             }
         }

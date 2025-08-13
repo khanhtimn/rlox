@@ -97,7 +97,48 @@ impl Parser {
         if self.match_token(TokenKind::Var) {
             return self.var_declaration();
         }
+        if self.match_token(TokenKind::Fun) {
+            return self.function_declaration("function".to_string());
+        }
         self.statement()
+    }
+
+    fn function_declaration(&mut self, kind: String) -> Result<Stmt, ParseError> {
+        let name = self
+            .consume(TokenKind::Identifier, &format!("Expect {} name.", kind))?
+            .clone();
+        self.consume(
+            TokenKind::LeftParen,
+            &format!("Expect '(' after {} name.", kind),
+        )?;
+        let mut parameters = Vec::new();
+        if !self.check(TokenKind::RightParen) {
+            loop {
+                if parameters.len() >= 255 {
+                    self.error(&self.peek().clone(), "Can't have more than 255 parameters.");
+                }
+                let param = self.consume(TokenKind::Identifier, "Expect parameter name.")?;
+                parameters.push(param.lexeme.clone());
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(
+            TokenKind::RightParen,
+            &format!("Expect ')' after {} parameters.", kind),
+        )?;
+
+        self.consume(
+            TokenKind::LeftBrace,
+            &format!("Expect '{{' before {} body.", kind),
+        )?;
+        let body = self.block()?;
+        Ok(Stmt::Function {
+            name: name.lexeme,
+            parameters,
+            body,
+        })
     }
 
     fn var_declaration(&mut self) -> Result<Stmt, ParseError> {
@@ -120,11 +161,7 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        if self.match_token(TokenKind::Print) {
-            let value = self.expression()?;
-            self.consume(TokenKind::Semicolon, "Expect ';' after value.")?;
-            Ok(Stmt::Print { expression: value })
-        } else if self.match_token(TokenKind::LeftBrace) {
+        if self.match_token(TokenKind::LeftBrace) {
             let statements = self.block()?;
             Ok(Stmt::Block { statements })
         } else if self.match_token(TokenKind::If) {
@@ -151,6 +188,14 @@ impl Parser {
                 condition,
                 body: Box::new(body),
             })
+        } else if self.match_token(TokenKind::Return) {
+            let value = if !self.check(TokenKind::Semicolon) {
+                Some(self.expression()?)
+            } else {
+                None
+            };
+            self.consume(TokenKind::Semicolon, "Expect ';' after return value.")?;
+            Ok(Stmt::Return { value })
         } else if self.match_token(TokenKind::For) {
             self.consume(TokenKind::LeftParen, "Expect '(' after 'for'.")?;
             let initializer = if self.match_token(TokenKind::Semicolon) {
@@ -366,7 +411,32 @@ impl Parser {
             let right = self.unary()?;
             return Ok(Expr::unary(operator, right));
         }
-        self.primary()
+        self.call()
+    }
+
+    fn call(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.primary()?;
+        while self.match_token(TokenKind::LeftParen) {
+            let mut arguments = Vec::new();
+            if !self.check(TokenKind::RightParen) {
+                loop {
+                    if arguments.len() >= 255 {
+                        self.error(&self.peek().clone(), "Can't have more than 255 arguments.");
+                    }
+                    arguments.push(self.expression()?);
+                    if !self.match_token(TokenKind::Comma) {
+                        break;
+                    }
+                }
+            }
+            let paren = self.consume(TokenKind::RightParen, "Expect ')' after arguments.")?;
+            expr = Expr::Call {
+                callee: Box::new(expr),
+                paren: paren.clone(),
+                arguments,
+            };
+        }
+        Ok(expr)
     }
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
@@ -451,7 +521,6 @@ impl Parser {
             TokenKind::RightBrace => "'}'",
             TokenKind::Semicolon => "';'",
             TokenKind::Var => "'var'",
-            TokenKind::Print => "'print'",
             _ => "token",
         });
         Err(err)
@@ -483,7 +552,6 @@ impl Parser {
                 | TokenKind::For
                 | TokenKind::If
                 | TokenKind::While
-                | TokenKind::Print
                 | TokenKind::Return => return,
                 _ => {}
             }
