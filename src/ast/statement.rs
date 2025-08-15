@@ -1,4 +1,5 @@
 use crate::ast::Expr;
+use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
@@ -6,7 +7,7 @@ pub enum Stmt {
         expression: Expr,
     },
     Var {
-        name: String,
+        name: Token,
         initializer: Option<Expr>,
     },
     Block {
@@ -22,12 +23,17 @@ pub enum Stmt {
         body: Box<Stmt>,
     },
     Return {
+        keyword: Token,
         value: Option<Expr>,
     },
     Function {
-        name: String,
-        parameters: Vec<String>,
+        name: Token,
+        parameters: Vec<Token>,
         body: Vec<Stmt>,
+    },
+    Class {
+        name: Token,
+        methods: Vec<Stmt>,
     },
 }
 
@@ -68,7 +74,7 @@ impl std::fmt::Display for Stmt {
                 write!(f, "{}", body)?;
                 write!(f, "}}")
             }
-            Stmt::Return { value } => {
+            Stmt::Return { keyword: _, value } => {
                 if let Some(expr) = value {
                     write!(f, "return {};", expr)
                 } else {
@@ -80,9 +86,25 @@ impl std::fmt::Display for Stmt {
                 parameters,
                 body,
             } => {
-                write!(f, "fn {} ({}) {{", name, parameters.join(", "))?;
+                write!(
+                    f,
+                    "fn {} ({}) {{",
+                    name,
+                    parameters
+                        .iter()
+                        .map(|p| p.lexeme.clone())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )?;
                 for statement in body {
                     write!(f, "{}", statement)?;
+                }
+                write!(f, "}}")
+            }
+            Stmt::Class { name, methods } => {
+                write!(f, "class {} {{", name)?;
+                for method in methods {
+                    write!(f, "{}", method)?;
                 }
                 write!(f, "}}")
             }

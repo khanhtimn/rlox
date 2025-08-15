@@ -1,4 +1,9 @@
-use crate::{ast::Stmt, environment::EnvRef};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use crate::interpreter::{Interpreter, RuntimeError};
+use crate::{ast::Stmt, environment::Environment, token::Token};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -7,21 +12,34 @@ pub enum Value {
     Boolean(bool),
     Nil,
     Callable(CallableValue),
+    Instance(Rc<RefCell<Instance>>),
 }
 
 #[derive(Debug, Clone)]
 pub enum CallableValue {
     Function(Function),
-    // Class(Class),
+    Class(Class),
     NativeFunction(NativeFunction),
+}
+
+#[derive(Debug, Clone)]
+pub struct Class {
+    pub name: Token,
+    pub methods: HashMap<String, Function>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Instance {
+    pub class: Class,
+    pub fields: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
-    pub parameters: Vec<String>,
+    pub parameters: Vec<Token>,
     pub body: Vec<Stmt>,
-    pub closure: EnvRef,
+    pub closure: Rc<RefCell<Environment>>,
     pub arity: usize,
 }
 
@@ -29,7 +47,23 @@ pub struct Function {
 pub struct NativeFunction {
     pub name: &'static str,
     pub arity: usize,
-    pub function: fn(Vec<Value>) -> Value,
+    pub function: fn(&mut Interpreter, &[Value]) -> Result<Value, RuntimeError>,
+}
+
+impl Value {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Boolean(_) => "boolean",
+            Value::Nil => "nil",
+            Value::Callable(c) => match c {
+                CallableValue::Function(_) | CallableValue::NativeFunction(_) => "function",
+                CallableValue::Class(_) => "class",
+            },
+            Value::Instance(_) => "instance",
+        }
+    }
 }
 
 impl CallableValue {
@@ -37,6 +71,7 @@ impl CallableValue {
         match self {
             CallableValue::Function(func) => func.arity,
             CallableValue::NativeFunction(func) => func.arity,
+            CallableValue::Class(class) => class.methods.get("init").map(|f| f.arity).unwrap_or(0),
         }
     }
 }
@@ -69,6 +104,9 @@ impl std::fmt::Display for Value {
             }
             Value::String(s) => write!(f, "{}", s),
             Value::Callable(c) => write!(f, "{}", c),
+            Value::Instance(instance) => {
+                write!(f, "<{} instance>", instance.borrow().class.name.lexeme)
+            }
         }
     }
 }
@@ -78,6 +116,19 @@ impl std::fmt::Display for CallableValue {
         match self {
             CallableValue::Function(func) => write!(f, "<fn {}>", func.name),
             CallableValue::NativeFunction(func) => write!(f, "<native fn {}>", func.name),
+            CallableValue::Class(class) => write!(f, "<class {}>", class.name.lexeme),
         }
+    }
+}
+
+impl std::fmt::Display for Class {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<class {}>", self.name.lexeme)
+    }
+}
+
+impl std::fmt::Display for Instance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{} instance>", self.class.name.lexeme)
     }
 }

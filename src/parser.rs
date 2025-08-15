@@ -2,7 +2,7 @@ use crate::ast::*;
 use crate::token::*;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum ParseError {
     UnexpectedToken {
         token: String,
@@ -35,20 +35,15 @@ impl std::fmt::Display for ParseError {
                 expected,
                 token,
                 ..
-            } => {
-                if let Some(exp) = expected {
-                    write!(
-                        f,
-                        "Syntax error: {}\nexpected: {}, found: {}",
-                        message, exp, token
-                    )
-                } else {
-                    write!(f, "Syntax error: {}\nfound: {}", message, token)
-                }
-            }
+            } => match expected {
+                Some(exp) => write!(f, "{}\nExpected: {}, found: {}", message, exp, token),
+                None => write!(f, "{}\nFound: {}", message, token),
+            },
         }
     }
 }
+
+impl std::error::Error for ParseError {}
 
 #[derive(Debug, Error)]
 #[error("parse failed with {0} error(s)")]
@@ -100,7 +95,23 @@ impl Parser {
         if self.match_token(TokenKind::Fun) {
             return self.function_declaration("function".to_string());
         }
+        if self.match_token(TokenKind::Class) {
+            return self.class_declaration();
+        }
         self.statement()
+    }
+
+    fn class_declaration(&mut self) -> Result<Stmt, ParseError> {
+        let name = self
+            .consume(TokenKind::Identifier, "Expect class name.")?
+            .clone();
+        self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
+        let mut methods = Vec::new();
+        while !self.is_at_end() && !self.check(TokenKind::RightBrace) {
+            methods.push(self.function_declaration("method".to_string())?);
+        }
+        self.consume(TokenKind::RightBrace, "Expect '}' after class body.")?;
+        Ok(Stmt::Class { name, methods })
     }
 
     fn function_declaration(&mut self, kind: String) -> Result<Stmt, ParseError> {
@@ -118,7 +129,7 @@ impl Parser {
                     self.error(&self.peek().clone(), "Can't have more than 255 parameters.");
                 }
                 let param = self.consume(TokenKind::Identifier, "Expect parameter name.")?;
-                parameters.push(param.lexeme.clone());
+                parameters.push(param.clone());
                 if !self.match_token(TokenKind::Comma) {
                     break;
                 }
@@ -135,7 +146,7 @@ impl Parser {
         )?;
         let body = self.block()?;
         Ok(Stmt::Function {
-            name: name.lexeme,
+            name,
             parameters,
             body,
         })
@@ -154,10 +165,7 @@ impl Parser {
             TokenKind::Semicolon,
             "Expect ';' after variable declaration.",
         )?;
-        Ok(Stmt::Var {
-            name: name.lexeme,
-            initializer,
-        })
+        Ok(Stmt::Var { name, initializer })
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
@@ -189,13 +197,14 @@ impl Parser {
                 body: Box::new(body),
             })
         } else if self.match_token(TokenKind::Return) {
+            let keyword = self.previous_token().clone();
             let value = if !self.check(TokenKind::Semicolon) {
                 Some(self.expression()?)
             } else {
                 None
             };
             self.consume(TokenKind::Semicolon, "Expect ';' after return value.")?;
-            Ok(Stmt::Return { value })
+            Ok(Stmt::Return { keyword, value })
         } else if self.match_token(TokenKind::For) {
             self.consume(TokenKind::LeftParen, "Expect '(' after 'for'.")?;
             let initializer = if self.match_token(TokenKind::Semicolon) {
@@ -250,7 +259,7 @@ impl Parser {
 
     fn block(&mut self) -> Result<Vec<Stmt>, ParseError> {
         let mut statements = Vec::new();
-        while !self.is_at_end() && self.peek().kind != TokenKind::RightBrace {
+        while !self.is_at_end() && !self.check(TokenKind::RightBrace) {
             statements.push(self.declaration()?);
         }
         self.consume(TokenKind::RightBrace, "Expect '}' after block.")?;
@@ -269,6 +278,12 @@ impl Parser {
             if let Expr::Variable { name } = expr {
                 return Ok(Expr::Assign {
                     name,
+                    value: Box::new(value),
+                });
+            } else if let Expr::Get { object, name } = expr {
+                return Ok(Expr::Set {
+                    object: Box::new(*object),
+                    name: name.clone(),
                     value: Box::new(value),
                 });
             }
@@ -416,25 +431,56 @@ impl Parser {
 
     fn call(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.primary()?;
-        while self.match_token(TokenKind::LeftParen) {
-            let mut arguments = Vec::new();
-            if !self.check(TokenKind::RightParen) {
-                loop {
-                    if arguments.len() >= 255 {
-                        self.error(&self.peek().clone(), "Can't have more than 255 arguments.");
-                    }
-                    arguments.push(self.expression()?);
-                    if !self.match_token(TokenKind::Comma) {
-                        break;
+        // while self.match_token(TokenKind::LeftParen) {
+        //     let mut arguments = Vec::new();
+        //     if !self.check(TokenKind::RightParen) {
+        //         loop {
+        //             if arguments.len() >= 255 {
+        //                 self.error(&self.peek().clone(), "Can't have more than 255 arguments.");
+        //             }
+        //             arguments.push(self.expression()?);
+        //             if !self.match_token(TokenKind::Comma) {
+        //                 break;
+        //             }
+        //         }
+        //     }
+        //     let paren = self.consume(TokenKind::RightParen, "Expect ')' after arguments.")?;
+        //     expr = Expr::Call {
+        //         callee: Box::new(expr),
+        //         paren: paren.clone(),
+        //         arguments: arguments.into_boxed_slice(),
+        //     };
+        // }
+        loop {
+            if self.match_token(TokenKind::LeftParen) {
+                let mut arguments = Vec::new();
+                if !self.check(TokenKind::RightParen) {
+                    loop {
+                        if arguments.len() >= 255 {
+                            self.error(&self.peek().clone(), "Can't have more than 255 arguments.");
+                        }
+                        arguments.push(self.expression()?);
+                        if !self.match_token(TokenKind::Comma) {
+                            break;
+                        }
                     }
                 }
+                let paren = self.consume(TokenKind::RightParen, "Expect ')' after arguments.")?;
+                expr = Expr::Call {
+                    callee: Box::new(expr),
+                    paren: paren.clone(),
+                    arguments: arguments.into_boxed_slice(),
+                };
+            } else if self.match_token(TokenKind::Dot) {
+                let name =
+                    self.consume(TokenKind::Identifier, "Expect property name after '.'.")?;
+                expr = Expr::Get {
+                    object: Box::new(expr),
+                    name: name.clone(),
+                };
+            } else {
+                break;
             }
-            let paren = self.consume(TokenKind::RightParen, "Expect ')' after arguments.")?;
-            expr = Expr::Call {
-                callee: Box::new(expr),
-                paren: paren.clone(),
-                arguments,
-            };
         }
         Ok(expr)
     }
@@ -450,11 +496,19 @@ impl Parser {
             return Ok(Expr::literal(LiteralKind::Nil));
         }
 
+        if self.match_token(TokenKind::This) {
+            return Ok(Expr::This {
+                keyword: self.previous_token().clone(),
+            });
+        }
+
         match &self.peek().kind {
             TokenKind::Number => {
                 let token = self.advance();
                 let n: f64 = token.lexeme.parse().unwrap();
-                return Ok(Expr::literal(LiteralKind::Number(n)));
+                return Ok(Expr::literal(LiteralKind::Number(
+                    ordered_float::OrderedFloat(n),
+                )));
             }
             TokenKind::String => {
                 let token = self.advance();
@@ -510,10 +564,7 @@ impl Parser {
         if self.check(kind) {
             return Ok(self.advance());
         }
-        let token = self.peek().clone();
-        let mut err = self.error(&token, message);
-        let ParseError::UnexpectedToken { expected, .. } = &mut err;
-        *expected = Some(match kind {
+        let expected_str: &'static str = match kind {
             TokenKind::Identifier => "identifier",
             TokenKind::LeftParen => "'('",
             TokenKind::RightParen => "')'",
@@ -522,8 +573,28 @@ impl Parser {
             TokenKind::Semicolon => "';'",
             TokenKind::Var => "'var'",
             _ => "token",
-        });
-        Err(err)
+        };
+
+        let peek_token = self.peek().clone();
+        let mut span = Some((peek_token.span.start, peek_token.span.end));
+        if matches!(
+            kind,
+            TokenKind::RightParen | TokenKind::RightBrace | TokenKind::Semicolon
+        ) {
+            if self.current > 0 {
+                let prev = self.previous_token().span;
+                span = Some((prev.end, prev.end));
+            }
+        }
+
+        self.had_error = true;
+        Err(ParseError::UnexpectedToken {
+            token: peek_token.lexeme,
+            line: peek_token.span.line,
+            message: message.to_string(),
+            expected: Some(expected_str),
+            span,
+        })
     }
 
     fn error(&mut self, token: &Token, message: &str) -> ParseError {

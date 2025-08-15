@@ -4,10 +4,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ScanError {
-    #[error("Scan error: Unexpected character '{ch}'")]
+    #[error("Unexpected character '{ch}'")]
     UnexpectedCharacter { ch: char, span: Span },
 
-    #[error("Scan error: Unterminated string")]
+    #[error("Unterminated string")]
     UnterminatedString { span: Span },
 }
 
