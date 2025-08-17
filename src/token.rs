@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -42,7 +42,7 @@ impl Span {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
@@ -63,7 +63,7 @@ impl Token {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TokenKind {
     // Literals
     Number,
@@ -105,7 +105,6 @@ pub enum TokenKind {
     If,
     Nil,
     Or,
-    Print,
     Return,
     Super,
     This,
@@ -168,12 +167,11 @@ impl std::fmt::Display for TokenKind {
             Self::Class => "Class",
             Self::Else => "Else",
             Self::False => "False",
-            Self::Fun => "fun",
+            Self::Fun => "Fun",
             Self::For => "For",
             Self::If => "If",
             Self::Nil => "Nil",
             Self::Or => "Or",
-            Self::Print => "Print",
             Self::Return => "Return",
             Self::Super => "Super",
             Self::This => "This",

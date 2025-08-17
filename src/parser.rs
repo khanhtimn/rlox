@@ -2,7 +2,7 @@ use crate::ast::*;
 use crate::token::*;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum ParseError {
     UnexpectedToken {
         token: String,
@@ -35,20 +35,15 @@ impl std::fmt::Display for ParseError {
                 expected,
                 token,
                 ..
-            } => {
-                if let Some(exp) = expected {
-                    write!(
-                        f,
-                        "Syntax error: {}\nexpected: {}, found: {}",
-                        message, exp, token
-                    )
-                } else {
-                    write!(f, "Syntax error: {}\nfound: {}", message, token)
-                }
-            }
+            } => match expected {
+                Some(exp) => write!(f, "{}\nExpected: {}, found: {}", message, exp, token),
+                None => write!(f, "{}\nFound: {}", message, token),
+            },
         }
     }
 }
+
+impl std::error::Error for ParseError {}
 
 #[derive(Debug, Error)]
 #[error("parse failed with {0} error(s)")]
@@ -97,7 +92,76 @@ impl Parser {
         if self.match_token(TokenKind::Var) {
             return self.var_declaration();
         }
+        if self.match_token(TokenKind::Fun) {
+            return self.function_declaration("function".to_string());
+        }
+        if self.match_token(TokenKind::Class) {
+            return self.class_declaration();
+        }
         self.statement()
+    }
+
+    fn class_declaration(&mut self) -> Result<Stmt, ParseError> {
+        let name = self
+            .consume(TokenKind::Identifier, "Expect class name.")?
+            .clone();
+        let superclass = if self.match_token(TokenKind::Less) {
+            self.consume(TokenKind::Identifier, "Expect superclass name.")?;
+            Some(Expr::Variable {
+                name: self.previous_token().clone(),
+            })
+        } else {
+            None
+        };
+        self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
+        let mut methods = Vec::new();
+        while !self.is_at_end() && !self.check(TokenKind::RightBrace) {
+            methods.push(self.function_declaration("method".to_string())?);
+        }
+        self.consume(TokenKind::RightBrace, "Expect '}' after class body.")?;
+        Ok(Stmt::Class {
+            name,
+            superclass,
+            methods,
+        })
+    }
+
+    fn function_declaration(&mut self, kind: String) -> Result<Stmt, ParseError> {
+        let name = self
+            .consume(TokenKind::Identifier, &format!("Expect {} name.", kind))?
+            .clone();
+        self.consume(
+            TokenKind::LeftParen,
+            &format!("Expect '(' after {} name.", kind),
+        )?;
+        let mut parameters = Vec::new();
+        if !self.check(TokenKind::RightParen) {
+            loop {
+                if parameters.len() >= 255 {
+                    self.error(&self.peek().clone(), "Can't have more than 255 parameters.");
+                }
+                let param = self.consume(TokenKind::Identifier, "Expect parameter name.")?;
+                parameters.push(param.clone());
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(
+            TokenKind::RightParen,
+            &format!("Expect ')' after {} parameters.", kind),
+        )?;
+
+        self.consume(
+            TokenKind::LeftBrace,
+            &format!("Expect '{{' before {} body.", kind),
+        )?;
+        let body = self.block()?;
+        Ok(Stmt::Function {
+            name,
+            parameters,
+            body,
+        })
     }
 
     fn var_declaration(&mut self) -> Result<Stmt, ParseError> {
@@ -113,18 +177,11 @@ impl Parser {
             TokenKind::Semicolon,
             "Expect ';' after variable declaration.",
         )?;
-        Ok(Stmt::Var {
-            name: name.lexeme,
-            initializer,
-        })
+        Ok(Stmt::Var { name, initializer })
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        if self.match_token(TokenKind::Print) {
-            let value = self.expression()?;
-            self.consume(TokenKind::Semicolon, "Expect ';' after value.")?;
-            Ok(Stmt::Print { expression: value })
-        } else if self.match_token(TokenKind::LeftBrace) {
+        if self.match_token(TokenKind::LeftBrace) {
             let statements = self.block()?;
             Ok(Stmt::Block { statements })
         } else if self.match_token(TokenKind::If) {
@@ -151,6 +208,15 @@ impl Parser {
                 condition,
                 body: Box::new(body),
             })
+        } else if self.match_token(TokenKind::Return) {
+            let keyword = self.previous_token().clone();
+            let value = if !self.check(TokenKind::Semicolon) {
+                Some(self.expression()?)
+            } else {
+                None
+            };
+            self.consume(TokenKind::Semicolon, "Expect ';' after return value.")?;
+            Ok(Stmt::Return { keyword, value })
         } else if self.match_token(TokenKind::For) {
             self.consume(TokenKind::LeftParen, "Expect '(' after 'for'.")?;
             let initializer = if self.match_token(TokenKind::Semicolon) {
@@ -205,7 +271,7 @@ impl Parser {
 
     fn block(&mut self) -> Result<Vec<Stmt>, ParseError> {
         let mut statements = Vec::new();
-        while !self.is_at_end() && self.peek().kind != TokenKind::RightBrace {
+        while !self.is_at_end() && !self.check(TokenKind::RightBrace) {
             statements.push(self.declaration()?);
         }
         self.consume(TokenKind::RightBrace, "Expect '}' after block.")?;
@@ -224,6 +290,12 @@ impl Parser {
             if let Expr::Variable { name } = expr {
                 return Ok(Expr::Assign {
                     name,
+                    value: Box::new(value),
+                });
+            } else if let Expr::Get { object, name } = expr {
+                return Ok(Expr::Set {
+                    object: Box::new(*object),
+                    name: name.clone(),
                     value: Box::new(value),
                 });
             }
@@ -366,7 +438,52 @@ impl Parser {
             let right = self.unary()?;
             return Ok(Expr::unary(operator, right));
         }
-        self.primary()
+        self.call()
+    }
+
+    fn call(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.primary()?;
+        loop {
+            if self.match_token(TokenKind::LeftParen) {
+                let mut arguments = Vec::new();
+                if !self.check(TokenKind::RightParen) {
+                    loop {
+                        if arguments.len() >= 255 {
+                            self.error(&self.peek().clone(), "Can't have more than 255 arguments.");
+                        }
+                        arguments.push(self.expression()?);
+                        if !self.match_token(TokenKind::Comma) {
+                            break;
+                        }
+                    }
+                }
+                let paren = self.consume(TokenKind::RightParen, "Expect ')' after arguments.")?;
+                expr = Expr::Call {
+                    callee: Box::new(expr),
+                    paren: paren.clone(),
+                    arguments: arguments.into_boxed_slice(),
+                };
+            } else if self.match_token(TokenKind::Dot) {
+                let name =
+                    self.consume(TokenKind::Identifier, "Expect property name after '.'.")?;
+                expr = Expr::Get {
+                    object: Box::new(expr),
+                    name: name.clone(),
+                };
+            } else if self.match_token(TokenKind::Super) {
+                let keyword = self.previous_token().clone();
+                self.consume(TokenKind::Dot, "Expect '.' after 'super'.")?;
+                let method =
+                    self.consume(TokenKind::Identifier, "Expect superclass method name.")?;
+                expr = Expr::Super {
+                    keyword,
+                    method: method.clone(),
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
     }
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
@@ -380,11 +497,19 @@ impl Parser {
             return Ok(Expr::literal(LiteralKind::Nil));
         }
 
+        if self.match_token(TokenKind::This) {
+            return Ok(Expr::This {
+                keyword: self.previous_token().clone(),
+            });
+        }
+
         match &self.peek().kind {
             TokenKind::Number => {
                 let token = self.advance();
                 let n: f64 = token.lexeme.parse().unwrap();
-                return Ok(Expr::literal(LiteralKind::Number(n)));
+                return Ok(Expr::literal(LiteralKind::Number(
+                    ordered_float::OrderedFloat(n),
+                )));
             }
             TokenKind::String => {
                 let token = self.advance();
@@ -440,10 +565,7 @@ impl Parser {
         if self.check(kind) {
             return Ok(self.advance());
         }
-        let token = self.peek().clone();
-        let mut err = self.error(&token, message);
-        let ParseError::UnexpectedToken { expected, .. } = &mut err;
-        *expected = Some(match kind {
+        let expected_str: &'static str = match kind {
             TokenKind::Identifier => "identifier",
             TokenKind::LeftParen => "'('",
             TokenKind::RightParen => "')'",
@@ -451,10 +573,29 @@ impl Parser {
             TokenKind::RightBrace => "'}'",
             TokenKind::Semicolon => "';'",
             TokenKind::Var => "'var'",
-            TokenKind::Print => "'print'",
             _ => "token",
-        });
-        Err(err)
+        };
+
+        let peek_token = self.peek().clone();
+        let mut span = Some((peek_token.span.start, peek_token.span.end));
+        if matches!(
+            kind,
+            TokenKind::RightParen | TokenKind::RightBrace | TokenKind::Semicolon
+        ) {
+            if self.current > 0 {
+                let prev = self.previous_token().span;
+                span = Some((prev.end, prev.end));
+            }
+        }
+
+        self.had_error = true;
+        Err(ParseError::UnexpectedToken {
+            token: peek_token.lexeme,
+            line: peek_token.span.line,
+            message: message.to_string(),
+            expected: Some(expected_str),
+            span,
+        })
     }
 
     fn error(&mut self, token: &Token, message: &str) -> ParseError {
@@ -483,7 +624,6 @@ impl Parser {
                 | TokenKind::For
                 | TokenKind::If
                 | TokenKind::While
-                | TokenKind::Print
                 | TokenKind::Return => return,
                 _ => {}
             }

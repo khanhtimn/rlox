@@ -4,10 +4,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ScanError {
-    #[error("Scan error: Unexpected character '{ch}'")]
+    #[error("Unexpected character '{ch}'")]
     UnexpectedCharacter { ch: char, span: Span },
 
-    #[error("Scan error: Unterminated string")]
+    #[error("Unterminated string")]
     UnterminatedString { span: Span },
 }
 
@@ -284,7 +284,6 @@ impl<'a> Scanner<'a> {
             keywords.insert("if", TokenKind::If);
             keywords.insert("nil", TokenKind::Nil);
             keywords.insert("or", TokenKind::Or);
-            keywords.insert("print", TokenKind::Print);
             keywords.insert("return", TokenKind::Return);
             keywords.insert("super", TokenKind::Super);
             keywords.insert("this", TokenKind::This);

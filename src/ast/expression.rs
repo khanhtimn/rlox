@@ -1,14 +1,15 @@
 use crate::token::Token;
+use ordered_float::OrderedFloat;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LiteralKind {
-    Number(f64),
+    Number(OrderedFloat<f64>),
     String(String),
     Boolean(bool),
     Nil,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     Binary {
         left: Box<Expr>,
@@ -36,6 +37,27 @@ pub enum Expr {
     Assign {
         name: Token,
         value: Box<Expr>,
+    },
+    Call {
+        callee: Box<Expr>,
+        paren: Token,
+        arguments: Box<[Expr]>,
+    },
+    Get {
+        object: Box<Expr>,
+        name: Token,
+    },
+    Set {
+        object: Box<Expr>,
+        name: Token,
+        value: Box<Expr>,
+    },
+    This {
+        keyword: Token,
+    },
+    Super {
+        keyword: Token,
+        method: Token,
     },
 }
 
@@ -106,6 +128,37 @@ impl std::fmt::Display for Expr {
                 right,
             } => {
                 write!(f, "({} {} {})", operator.lexeme, left, right)
+            }
+            Expr::Call {
+                callee,
+                paren,
+                arguments,
+            } => {
+                write!(
+                    f,
+                    "({} {} {})",
+                    callee,
+                    paren.lexeme,
+                    arguments
+                        .iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+            Expr::Get { object, name } => {
+                write!(f, "({}.{})", object, name.lexeme)
+            }
+            Expr::Set {
+                object,
+                name,
+                value,
+            } => {
+                write!(f, "({}.{} = {})", object, name.lexeme, value)
+            }
+            Expr::This { keyword } => write!(f, "{}", keyword.lexeme),
+            Expr::Super { keyword, method } => {
+                write!(f, "({}.{})", keyword.lexeme, method.lexeme)
             }
         }
     }
